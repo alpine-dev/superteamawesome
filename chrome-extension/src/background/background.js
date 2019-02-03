@@ -61,6 +61,9 @@ function handleChromeTabsRemoved(tabId, removeInfo) {
  * @param callback with `tabInfo` argument
  */
 function fetchTabInfoForLocation(hostname, pathname, callback) {
+    const MIT_PUZZLE_ARCHIVE_PATTERN = /web\.mit\.edu\/puzzle\/www\/(\d{4})/i;
+    const SLACK_CHANNEL_DOMAIN = "superteamawesome.slack.com";
+    const GOOGLE_DOCS_DOMAIN = "docs.google.com";
     function foundPuzzle(puzzleSnapshot, locationType) {
         callback({
             toolbarType: "puzzle",
@@ -70,7 +73,34 @@ function fetchTabInfoForLocation(hostname, pathname, callback) {
             slackChannelId: puzzleSnapshot.val().slackChannelId
         });
     }
-    if (hostname === "docs.google.com") {
+    function tryFindPuzzle(huntKey, pathSearch, callback) {
+        selectAllWhereChildEquals("puzzles",
+            "hunt", huntKey, function(puzzlesSnapshot) {
+                var didFindPuzzle = puzzlesSnapshot.forEach(function(p) {
+                    const puzzlePath = p.val().path;
+                    if (!puzzlePath) {
+                        return false;
+                    }
+                    const pathParts = pathSearch.split("/");
+                    let pathToCheck = "";
+                    for (let i = 0; i < pathParts.length; ++i) {
+                        pathToCheck += `/${pathParts[i]}`;
+                        if (pathToCheck.startsWith(puzzlePath)) {
+                            foundPuzzle(p, "puzzle");
+                            return true; // stop find iteration
+                        }
+                    }
+                });
+                if (!didFindPuzzle) {
+                    callback({
+                        toolbarType: "hunt",
+                        locationType: "huntSite",
+                        huntKey: huntKey
+                    });
+                }
+        });
+    }
+    if (hostname === GOOGLE_DOCS_DOMAIN) {
         var match = pathname.match(/\/spreadsheets\/d\/([^\/?]+)/);
         if (match) {
             selectOnlyWhereChildEquals("puzzles",
@@ -82,7 +112,7 @@ function fetchTabInfoForLocation(hostname, pathname, callback) {
                     }
                 });
         }
-    } else if (hostname === "superteamawesome.slack.com") {
+    } else if (hostname === SLACK_CHANNEL_DOMAIN) {
         var match = pathname.match(/\/messages\/([^\/?]+)/);
         if (match) {
             selectOnlyWhereChildEquals("puzzles",
@@ -96,6 +126,25 @@ function fetchTabInfoForLocation(hostname, pathname, callback) {
                     }
                 });
         }
+    } else if (MIT_PUZZLE_ARCHIVE_PATTERN.test(hostname + pathname)) {
+        // Archive: web.mit.edu/puzzle/www/{year}
+        const yearMatch = (hostname + pathname).match(MIT_PUZZLE_ARCHIVE_PATTERN);
+        if (yearMatch && yearMatch[1]) {
+            // Find hunt that matches archive location's year
+            const year = yearMatch[1];
+            selectOnlyWhereChildEquals("huntHostNames",
+            "hunt", year, function(huntHostName) {
+                if (!huntHostName) {
+                    callback({ toolbarType: "none" });
+                    return;
+                }
+                const huntKey = huntHostName.val().hunt;
+
+                // See if any puzzles in this hunt match the current path
+                const trimPathname = pathname.replace(/\/puzzle\/www\/\d{4}\//i, "");
+                tryFindPuzzle(huntKey, trimPathname, callback);
+            });
+        }
     } else {
         // Find hunt that matches current location's hostname
         selectOnlyWhereChildEquals("huntHostNames",
@@ -107,31 +156,7 @@ function fetchTabInfoForLocation(hostname, pathname, callback) {
                 var huntKey = huntHostName.val().hunt;
 
                 // See if any puzzles in this hunt match the current path
-                selectAllWhereChildEquals("puzzles",
-                    "hunt", huntKey, function(puzzlesSnapshot) {
-                        var didFindPuzzle = puzzlesSnapshot.forEach(function(p) {
-                            const puzzlePath = p.val().path;
-                            if (!puzzlePath) {
-                                return false;
-                            }
-                            const pathParts = pathname.split("/");
-                            let pathToCheck = "";
-                            for (let i = 0; i < pathParts.length; ++i) {
-                                pathToCheck += `/${pathParts[i]}`;
-                                if (pathToCheck.startsWith(puzzlePath)) {
-                                    foundPuzzle(p, "puzzle");
-                                    return true; // stop forEach iteration
-                                }
-                            }
-                        });
-                        if (!didFindPuzzle) {
-                            callback({
-                                toolbarType: "hunt",
-                                locationType: "huntSite",
-                                huntKey: huntKey
-                            });
-                        }
-                    });
-            });
+                tryFindPuzzle(huntKey, pathname, callback);
+        });
     }
 }

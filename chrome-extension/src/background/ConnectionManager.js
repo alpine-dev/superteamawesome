@@ -87,7 +87,22 @@ function initializeHuntToolbar(port, toolbarInfo) {
 
     function handleDiscoveredPageValue(snap) {
         // TODO only add discoveredPage if the hunt is current
+        function shouldAutoIgnoreDiscoveredPage(toolbarInfo) {
+            // ignore archive pages
+            if (/web\.mit\.edu/i.test(toolbarInfo.host)) {
+                return true;
+            }
+            // ignore solution pages
+            if (/\/solution\//i.test(toolbarInfo.path)) {
+                return true;
+            }
+            return false;
+        }
         if (snap.numChildren() === 0) {
+            if (shouldAutoIgnoreDiscoveredPage(toolbarInfo)) {
+                return console.log("[auto-ignore/discoveredPages]",
+                    toolbarInfo.host, toolbarInfo.path, toolbarInfo.title);
+            }
             console.log("[firebase/discoveredPages]",
                 toolbarInfo.host, toolbarInfo.path, toolbarInfo.title);
             const pushed = db.ref("discoveredPages/" + toolbarInfo.huntKey).push({
